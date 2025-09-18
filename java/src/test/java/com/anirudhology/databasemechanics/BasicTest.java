@@ -1,4 +1,4 @@
-package com.databasemechanics;
+package com.anirudhology.databasemechanics;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
