@@ -102,16 +102,7 @@ public class BTreeNode<K extends Comparable<K>, V> {
      * Assumes the node is not full.
      */
     public void insertKeyValue(K key, V value) {
-        KeyValuePair<K, V> newPair = new KeyValuePair<>(key, value);
-        int insertPos = 0;
-
-        // Find insertion position to maintain sorted order
-        while (insertPos < keyValuePairs.size() &&
-                key.compareTo(keyValuePairs.get(insertPos).getKey()) > 0) {
-            insertPos++;
-        }
-
-        keyValuePairs.add(insertPos, newPair);
+        this.keyValuePairs.add(new KeyValuePair<>(key, value));
     }
 
     /**
@@ -140,7 +131,7 @@ public class BTreeNode<K extends Comparable<K>, V> {
      *
      * @param key The key to search for
      * @return If found: the index of the key (>= 0)
-     *         If not found: negative insertion point (-insertionIndex - 1)
+     * If not found: negative insertion point (-insertionIndex - 1)
      */
     public int findKeyIndex(K key) {
         if (this.keyValuePairs.isEmpty()) {

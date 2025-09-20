@@ -73,8 +73,46 @@ public class BTree<K extends Comparable<K>, V> {
      * @return The previous value associated with the key, or null if none
      */
     public V insert(K key, V value) {
-        // TODO(human): Implement insertion operation
-        return null;
+        // Special case
+        if (isEmpty()) {
+            this.root.insertKeyValue(key, value);
+            this.size++;
+            return null;
+        }
+        // Reference to the root pointer
+        BTreeNode<K, V> current = this.root;
+        while (true) {
+            final int index = current.findKeyIndex(key);
+            // Key already exists in the tree, so we need to update it
+            if (index >= 0) {
+                // Get the current value associated with this key
+                final KeyValuePair<K, V> existingEntry = current.getKeyValuePair(index);
+                final V previousValue = existingEntry.getValue();
+                // Update the value
+                existingEntry.setValue(value);
+                return previousValue;
+            }
+            // When key isn't found in the current node, navigate to its children
+            else {
+                current = current.getChild(current.getChildIndex(key));
+                // If it is a leaf node, we need to insert the new pair
+                if (current.isLeaf()) {
+                    final int keyIndexInLeaf = current.findKeyIndex(key);
+                    if (keyIndexInLeaf >= 0) {
+                        // Get the current value associated with this key
+                        final KeyValuePair<K, V> existingEntry = current.getKeyValuePair(keyIndexInLeaf);
+                        final V previousValue = existingEntry.getValue();
+                        // Update the value
+                        existingEntry.setValue(value);
+                        return previousValue;
+                    } else {
+                        current.insertKeyValue(key, value);
+                        this.size++;
+                        return null;
+                    }
+                }
+            }
+        }
     }
 
     /**
