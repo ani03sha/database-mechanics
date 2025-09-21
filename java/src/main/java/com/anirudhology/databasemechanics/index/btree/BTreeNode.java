@@ -19,7 +19,7 @@ public class BTreeNode<K extends Comparable<K>, V> {
     private final int minDegree; // Minimum degree (t)
     private final List<KeyValuePair<K, V>> keyValuePairs;
     private final List<BTreeNode<K, V>> children;
-    private boolean isLeaf;
+    private final boolean isLeaf;
 
     /**
      * Creates a new B-Tree node.
@@ -81,32 +81,27 @@ public class BTreeNode<K extends Comparable<K>, V> {
     }
 
     /**
-     * Sets whether this node is a leaf.
-     */
-    public void setLeaf(boolean leaf) {
-        this.isLeaf = leaf;
-    }
-
-    /**
      * Returns true if this node is full (has maximum number of keys).
      */
     public boolean isFull() {
-        return keyValuePairs.size() == (2 * minDegree - 1);
+        return keyValuePairs.size() >= (2 * minDegree - 1);
     }
 
     /**
-     * Returns true if this node has minimum number of keys.
-     */
-    public boolean hasMinimumKeys() {
-        return keyValuePairs.size() >= (minDegree - 1);
-    }
-
-    /**
-     * Adds a key-value pair to this node at the appropriate position.
+     * Adds a key-value pair to this node at the appropriate position to maintain sorted order.
      * Assumes the node is not full.
      */
     public void insertKeyValue(K key, V value) {
-        this.keyValuePairs.add(new KeyValuePair<>(key, value));
+        KeyValuePair<K, V> newPair = new KeyValuePair<>(key, value);
+        int insertPos = 0;
+
+        // Find insertion position to maintain sorted order
+        while (insertPos < keyValuePairs.size() &&
+               key.compareTo(keyValuePairs.get(insertPos).getKey()) > 0) {
+            insertPos++;
+        }
+
+        keyValuePairs.add(insertPos, newPair);
     }
 
     /**
@@ -173,8 +168,6 @@ public class BTreeNode<K extends Comparable<K>, V> {
             return -(keyIndex + 1);
         }
     }
-    // TODO(human): Add methods for splitting this node when full
-    // TODO(human): Add methods for merging nodes during deletion
 
     @Override
     public String toString() {

@@ -1,8 +1,5 @@
 package com.anirudhology.databasemechanics.index.btree;
 
-import java.security.Key;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 
 /**
@@ -76,51 +73,49 @@ public class BTree<K extends Comparable<K>, V> {
      * @return The previous value associated with the key, or null if none
      */
     public V insert(K key, V value) {
-        // Special case
+        // 1. Handle empty tree
         if (isEmpty()) {
             this.root.insertKeyValue(key, value);
             this.size++;
-            return null;
+            return null; // Return previous value
         }
-        // Reference to the root pointer
+        // 2. Split root if it's full (proactive splitting)
+        if (this.root.isFull()) {
+            final BTreeNode<K, V> newRoot = new BTreeNode<>(this.minDegree, false);
+            newRoot.insertChild(0, this.root);
+            splitNode(this.root, newRoot);
+            this.root = newRoot;
+        }
+        // 3. Simple traversal with proactive splitting
         BTreeNode<K, V> current = this.root;
-        // Parent to the current node
-        BTreeNode<K, V> parent = null;
         while (true) {
-            final int index = current.findKeyIndex(key);
-            // Key already exists in the tree, so we need to update it
-            if (index >= 0) {
-                // Get the current value associated with this key
-                final KeyValuePair<K, V> existingEntry = current.getKeyValuePair(index);
-                final V previousValue = existingEntry.getValue();
-                // Update the value
-                existingEntry.setValue(value);
-                return previousValue;
+            final int keyIndex = current.findKeyIndex(key);
+            // If the key already exists in the tree, we will only update the value
+            if (keyIndex >= 0) {
+                final V oldValue = current.getValue(keyIndex);
+                current.getKeyValuePair(keyIndex).setValue(value);
+                return oldValue;
             }
-            // When key isn't found in the current node, navigate to its children
+            // If the key doesn't exist in the tree - descent or insert
+            if (current.isLeaf()) {
+                // Leaf node - insert here (guaranteed to have space)
+                current.insertKeyValue(key, value);
+                this.size++;
+                return null;
+            }
+            // For internal node - find child and split, if needed
             else {
-                parent = current;
-                current = current.getChild(current.getChildIndex(key));
-                // If it is a leaf node, we need to insert the new pair
-                if (current.isLeaf()) {
-                    if (current.getKeyCount() >= 2 * minDegree - 1) {
-                        // Split the node
-                        splitNode(current, parent);
-                    }
-                    final int keyIndexInLeaf = current.findKeyIndex(key);
-                    if (keyIndexInLeaf >= 0) {
-                        // Get the current value associated with this key
-                        final KeyValuePair<K, V> existingEntry = current.getKeyValuePair(keyIndexInLeaf);
-                        final V previousValue = existingEntry.getValue();
-                        // Update the value
-                        existingEntry.setValue(value);
-                        return previousValue;
-                    } else {
-                        current.insertKeyValue(key, value);
-                        this.size++;
-                        return null;
-                    }
+                int childIndex = current.getChildIndex(key);
+                BTreeNode<K, V> child = current.getChild(childIndex);
+                // Split child if full before descending
+                if (child.isFull()) {
+                    splitNode(child, current);
+                    // Re-determine which child to follow after split
+                    childIndex = current.getChildIndex(key);
+                    child = current.getChild(childIndex);
                 }
+                // Descend to child
+                current = child;
             }
         }
     }
@@ -167,103 +162,116 @@ public class BTree<K extends Comparable<K>, V> {
      * @return The value that was associated with the key, or null if not found
      */
     public V delete(K key) {
-        // 1 Traverse the tree to find the key-value pair with key
-        BTreeNode<K, V> current = this.root;
-        BTreeNode<K, V> parent = null;
-        int nodeIndex = 0;
-        while (true) {
-            final int index = current.findKeyIndex(key);
-            // 1.1 Key found in the current node
-            if (index >= 0) {
-                // Leaf node and it is not under-flowing with keys
-                if (current.isLeaf()) {
-                    KeyValuePair<K, V> removedNode = current.removeKeyValuePair(index);
-                    this.size--;
-                    fixUnderflow(current, parent, nodeIndex);
-                    return removedNode.getValue();
-                } else {
-                    // Internal node deletion - replace with successor
-                    final V originalValue = current.getValue(index);
-                    // Track path to successor for underflow handling
-                    final List<BTreeNode<K, V>> successorPath = new ArrayList<>();
-                    final List<Integer> successorIndices = new ArrayList<>();
-                    // Find successor and track the path
-                    BTreeNode<K, V> successor = current.getChild(index + 1);
-                    successorPath.add(current);
-                    successorIndices.add(index + 1);
-                    while (!successor.isLeaf()) {
-                        successorPath.add(successor);
-                        successorIndices.add(0); // Always go left to find minimum
-                        successor = successor.getChild(0);
-                    }
-                    // Get successor key-value pair and replace in current node
-                    final KeyValuePair<K, V> successorKVPair = successor.getKeyValuePair(0);
-                    current.removeKeyValuePair(index);
-                    current.insertKeyValue(successorKVPair.getKey(), successorKVPair.getValue());
-                    // Remove successor from leaf
-                    successor.removeKeyValuePair(0);
-                    this.size--;
-                    // Handle underflow bottom-up along successor path
-                    BTreeNode<K, V> currentNode = successor;
-                    for (int i = successorPath.size() - 1; i >= 0; i--) {
-                        BTreeNode<K, V> parentNode = successorPath.get(i);
-                        int nodeIdx = successorIndices.get(i);
-                        fixUnderflow(currentNode, parentNode, nodeIdx);
-                        currentNode = parentNode;
-                    }
-                    return originalValue;
-                }
-            }
-            // 1.2 If node is not found in the tree
-            else {
-                if (current.isLeaf()) {
-                    return null;
-                }
-                parent = current;
-                nodeIndex = current.getChildIndex(key);
-                current = current.getChild(nodeIndex);
-            }
+        // 1. Handle empty tree
+        if (isEmpty()) {
+            return null;
         }
+        // 2. Handle root special case, if not empty
+        final V result = deleteFromNode(this.root, key);
+        // Note: deleteFromNode now handles size decrement internally when successful
+
+        // 3. If root is empty but has children, promote child to root
+        if (this.root.getKeyCount() == 0 && !this.root.isLeaf()) {
+            this.root = this.root.getChild(0);
+        }
+
+        return result;
     }
 
-    private void fixUnderflow(BTreeNode<K, V> node, BTreeNode<K, V> parent, int nodeIndex) {
-        if (!hasUnderflow(node)) {
-            // No underflow to fix
-            return;
-        }
-        // Root underflow
-        if (parent == null) {
-            if (node.getKeyCount() == 0 && !node.isLeaf()) {
-                // Root is empty but has children - make first child new root
-                this.root = node.getChild(0);
-            }
-            return;
-        }
-        // Try borrowing first
-        if (canBorrowFromLeftSibling(node, parent, nodeIndex)) {
-            borrowFromLeftSibling(node, parent, nodeIndex);
-        } else if (canBorrowFromRightSibling(node, parent, nodeIndex)) {
-            borrowFromRightSibling(node, parent, nodeIndex);
-        } else {
-            // Must merge
-            if (nodeIndex > 0) {
-                mergeWithLeftSibling(node, parent, nodeIndex);
+    private V deleteFromNode(BTreeNode<K, V> current, K key) {
+        int keyIndex = current.findKeyIndex(key);
+
+        if (keyIndex >= 0) {
+            // Key found in current node
+            if (current.isLeaf()) {
+                // Simple leaf deletion
+                V result = current.removeKeyValuePair(keyIndex).getValue();
+                this.size--; // Decrement size for successful deletion
+                return result;
             } else {
-                mergeWithRightSibling(node, parent, nodeIndex);
+                // Internal node deletion - replace with successor
+                V originalValue = current.getValue(keyIndex);
+
+                // Find successor (leftmost key in right subtree)
+                BTreeNode<K, V> successorNode = current.getChild(keyIndex + 1);
+                while (!successorNode.isLeaf()) {
+                    successorNode = successorNode.getChild(0);
+                }
+
+                // Replace with successor
+                K successorKey = successorNode.getKey(0);
+                V successorValue = successorNode.getValue(0);
+                current.removeKeyValuePair(keyIndex);
+                current.insertKeyValue(successorKey, successorValue);
+
+                // Delete successor from leaf (this will decrement size)
+                deleteFromNode(current.getChild(keyIndex + 1), successorKey);
+
+                // Check for underflow in child after deletion
+                BTreeNode<K, V> child = current.getChild(keyIndex + 1);
+                if (child.getKeyCount() < minDegree - 1) {
+                    fixUnderflow(current, keyIndex + 1);
+                }
+
+                return originalValue;
+            }
+        } else if (!current.isLeaf()) {
+            // Key not found - descend to appropriate child
+            int childIndex = current.getChildIndex(key);
+            V result = deleteFromNode(current.getChild(childIndex), key);
+
+            // Check for underflow in child after deletion
+            if (childIndex < current.getChildren().size() &&
+                    current.getChild(childIndex).getKeyCount() < minDegree - 1) {
+                fixUnderflow(current, childIndex);
+            }
+
+            return result;
+        }
+
+        return null; // Key not found
+    }
+
+    /**
+     * Fixes underflow in a child node by borrowing from siblings or merging.
+     * This is called after a deletion has caused a child to have fewer than minDegree-1 keys.
+     */
+    private void fixUnderflow(BTreeNode<K, V> parent, int childIndex) {
+        BTreeNode<K, V> child = parent.getChild(childIndex);
+
+        // Defensive check - child should be under-flowing
+        if (child.getKeyCount() >= minDegree - 1) {
+            return; // No underflow to fix
+        }
+
+        // Try to borrow from left sibling first
+        if (childIndex > 0) {
+            BTreeNode<K, V> leftSibling = parent.getChild(childIndex - 1);
+            if (leftSibling.getKeyCount() > minDegree - 1) {
+                borrowFromLeftSibling(child, parent, childIndex);
+                return;
             }
         }
-    }
 
-    private boolean hasUnderflow(BTreeNode<K, V> node) {
-        return node.getKeyCount() < this.minDegree - 1;
-    }
+        // Try to borrow from right sibling
+        if (childIndex < parent.getChildren().size() - 1) {
+            BTreeNode<K, V> rightSibling = parent.getChild(childIndex + 1);
+            if (rightSibling.getKeyCount() > minDegree - 1) {
+                borrowFromRightSibling(child, parent, childIndex);
+                return;
+            }
+        }
 
-    private boolean canBorrowFromLeftSibling(BTreeNode<K, V> node, BTreeNode<K, V> parent, int nodeIndex) {
-        return nodeIndex > 0 && parent.getChild(nodeIndex - 1).getKeyCount() > this.minDegree - 1;
-    }
-
-    private boolean canBorrowFromRightSibling(BTreeNode<K, V> node, BTreeNode<K, V> parent, int nodeIndex) {
-        return nodeIndex < parent.getKeyCount() && parent.getChild(nodeIndex + 1).getKeyCount() > this.minDegree - 1;
+        // Cannot borrow - must merge with a sibling
+        if (childIndex > 0) {
+            // Merge with left sibling
+            mergeWithLeftSibling(child, parent, childIndex);
+        } else if (childIndex < parent.getChildren().size() - 1) {
+            // Merge with right sibling
+            mergeWithRightSibling(child, parent, childIndex);
+        }
+        // If no siblings available, this indicates a structural problem,
+        // but we'll let the tree continue rather than throw an exception
     }
 
     private void borrowFromLeftSibling(BTreeNode<K, V> node, BTreeNode<K, V> parent, int nodeIndex) {
@@ -306,41 +314,69 @@ public class BTree<K extends Comparable<K>, V> {
     }
 
     private void mergeWithLeftSibling(BTreeNode<K, V> node, BTreeNode<K, V> parent, int nodeIndex) {
-        // 1. Get the left sibling
         final BTreeNode<K, V> leftSibling = parent.getChild(nodeIndex - 1);
-        // 2. Remove the separator from parent
+
+        // Check if merge is safe (won't exceed maximum capacity)
+        int totalKeys = leftSibling.getKeyCount() + 1 + node.getKeyCount(); // +1 for separator
+        if (totalKeys > 2 * minDegree - 1) {
+            // Merge would create oversized node - this shouldn't happen with proper invariants
+            // Fall back to borrowing instead
+            if (leftSibling.getKeyCount() > minDegree - 1) {
+                borrowFromLeftSibling(node, parent, nodeIndex);
+                return;
+            }
+        }
+
+        // Safe to merge
         final KeyValuePair<K, V> separator = parent.removeKeyValuePair(nodeIndex - 1);
-        // 3. Move separator and all keys in node to leftSibling
         leftSibling.insertKeyValue(separator.getKey(), separator.getValue());
+
+        // Move all keys from current node to left sibling
         while (node.getKeyCount() > 0) {
             final KeyValuePair<K, V> removedKey = node.removeKeyValuePair(0);
             leftSibling.insertKeyValue(removedKey.getKey(), removedKey.getValue());
         }
-        // 4. Move all children of node to leftSibling
+
+        // Move all children from current node to left sibling
         while (!node.getChildren().isEmpty()) {
             leftSibling.insertChild(leftSibling.getChildren().size(), node.removeChild(0));
         }
-        // 5. Remove current node from parent
+
+        // Remove current node from parent
         parent.removeChild(nodeIndex);
     }
 
     private void mergeWithRightSibling(BTreeNode<K, V> node, BTreeNode<K, V> parent, int nodeIndex) {
-        // 1. Get the right sibling
         final BTreeNode<K, V> rightSibling = parent.getChild(nodeIndex + 1);
-        // 2. Remove separator from parent
+
+        // Check if merge is safe (won't exceed maximum capacity)
+        int totalKeys = node.getKeyCount() + 1 + rightSibling.getKeyCount(); // +1 for separator
+        if (totalKeys > 2 * minDegree - 1) {
+            // Merge would create oversized node - this shouldn't happen with proper invariants
+            // Fall back to borrowing instead
+            if (rightSibling.getKeyCount() > minDegree - 1) {
+                borrowFromRightSibling(node, parent, nodeIndex);
+                return;
+            }
+        }
+
+        // Safe to merge - move everything to current node first, then replace right sibling
         final KeyValuePair<K, V> separator = parent.removeKeyValuePair(nodeIndex);
-        // 3. Move separator and all keys in node to rightSibling
-        rightSibling.insertKeyValue(separator.getKey(), separator.getValue());
-        while (node.getKeyCount() > 0) {
-            final KeyValuePair<K, V> removedKey = node.removeKeyValuePair(0);
-            rightSibling.insertKeyValue(removedKey.getKey(), removedKey.getValue());
+        node.insertKeyValue(separator.getKey(), separator.getValue());
+
+        // Move all keys from right sibling to current node
+        while (rightSibling.getKeyCount() > 0) {
+            final KeyValuePair<K, V> removedKey = rightSibling.removeKeyValuePair(0);
+            node.insertKeyValue(removedKey.getKey(), removedKey.getValue());
         }
-        // 4. Move all children of node to rightSibling
-        while (!node.getChildren().isEmpty()) {
-            rightSibling.insertChild(rightSibling.getChildren().size(), node.removeChild(0));
+
+        // Move all children from right sibling to current node
+        while (!rightSibling.getChildren().isEmpty()) {
+            node.insertChild(node.getChildren().size(), rightSibling.removeChild(0));
         }
-        // 5. Remove current node from parent
-        parent.removeChild(nodeIndex);
+
+        // Remove right sibling from parent
+        parent.removeChild(nodeIndex + 1);
     }
 
     /**
@@ -369,18 +405,4 @@ public class BTree<K extends Comparable<K>, V> {
         return root;
     }
 
-    // Helper method to set root (used during splits)
-    void setRoot(BTreeNode<K, V> newRoot) {
-        this.root = newRoot;
-    }
-
-    // Helper method to increment size
-    void incrementSize() {
-        this.size++;
-    }
-
-    // Helper method to decrement size
-    void decrementSize() {
-        this.size--;
-    }
 }
