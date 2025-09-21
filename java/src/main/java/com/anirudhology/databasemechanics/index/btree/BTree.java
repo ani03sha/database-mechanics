@@ -81,6 +81,8 @@ public class BTree<K extends Comparable<K>, V> {
         }
         // Reference to the root pointer
         BTreeNode<K, V> current = this.root;
+        // Parent to the current node
+        BTreeNode<K, V> parent = null;
         while (true) {
             final int index = current.findKeyIndex(key);
             // Key already exists in the tree, so we need to update it
@@ -94,9 +96,14 @@ public class BTree<K extends Comparable<K>, V> {
             }
             // When key isn't found in the current node, navigate to its children
             else {
+                parent = current;
                 current = current.getChild(current.getChildIndex(key));
                 // If it is a leaf node, we need to insert the new pair
                 if (current.isLeaf()) {
+                    if (current.getKeyCount() >= 2 * minDegree - 1) {
+                        // Split the node
+                        splitNode(current, parent);
+                    }
                     final int keyIndexInLeaf = current.findKeyIndex(key);
                     if (keyIndexInLeaf >= 0) {
                         // Get the current value associated with this key
@@ -113,6 +120,41 @@ public class BTree<K extends Comparable<K>, V> {
                 }
             }
         }
+    }
+
+    private void splitNode(BTreeNode<K, V> current, BTreeNode<K, V> parent) {
+        // 1. Get the middle index
+        final int middleIndex = this.minDegree - 1;
+        // 2. Remove middle key from the original node
+        final KeyValuePair<K, V> middleKVPair = current.removeKeyValuePair(middleIndex);
+        // 3. Create a new right node
+        final BTreeNode<K, V> right = new BTreeNode<>(this.minDegree, current.isLeaf());
+        // 4. Move keys from middleIndex + 1 ... end to the right node
+        while (current.getKeyCount() > middleIndex) {
+            final KeyValuePair<K, V> keyValuePair = current.removeKeyValuePair(middleIndex);
+            right.insertKeyValue(keyValuePair.getKey(), keyValuePair.getValue());
+        }
+        // 5. If not leaf (internal node), move all children from middle + 1 ... end to right node
+        if (!current.isLeaf()) {
+            while (current.getChildren().size() > middleIndex + 1) {
+                final BTreeNode<K, V> child = current.removeChild(middleIndex + 1);
+                right.insertChild(right.getChildren().size(), child);
+            }
+        }
+        // 6. If it comes to root split, we create a new internal node and
+        // add current and right its children
+        if (parent == null) {
+            final BTreeNode<K, V> splitRoot = new BTreeNode<>(this.minDegree, false);
+            splitRoot.insertKeyValue(middleKVPair.getKey(), middleKVPair.getValue());
+            splitRoot.insertChild(0, current);
+            splitRoot.insertChild(1, right);
+            this.root = splitRoot;
+            return;
+        }
+        // 7. If we are splitting internal node, we add right as its one of the children
+        parent.insertKeyValue(middleKVPair.getKey(), middleKVPair.getValue());
+        final int insertionIndex = parent.findKeyIndex(middleKVPair.getKey()) + 1;
+        parent.insertChild(insertionIndex, right);
     }
 
     /**

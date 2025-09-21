@@ -62,6 +62,10 @@ public class BTreeNode<K extends Comparable<K>, V> {
         return keyValuePairs.get(index);
     }
 
+    public List<BTreeNode<K, V>> getChildren() {
+        return this.children;
+    }
+
     /**
      * Returns the child at the specified index.
      */
