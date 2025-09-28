@@ -1,6 +1,5 @@
-from typing import Generic, TypeVar, List, Optional, Union
+from typing import Generic, TypeVar, Optional
 from .btree_node import BTreeNode
-from .key_value_pair import KeyValuePair
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -21,7 +20,7 @@ class BTreeIndex(Generic[K, V]):
         if min_degree < 2:
             raise ValueError("Minimum degree must be at least 2")
         # Make _min_degree immutable
-        super.__setattr__("_min_degree", min_degree)
+        super().__setattr__("_min_degree", min_degree)
         self._root = BTreeNode(self._min_degree, True)
         self._size = 0
 
@@ -39,7 +38,7 @@ class BTreeIndex(Generic[K, V]):
                 return current.get_value(index)
             else:
                 # If the current node is leaf, it means the key is not present in the tree
-                if current.is_leaf():
+                if current.is_leaf:
                     return None
                 else:
                     current = current.get_child(current.get_child_index(key))
@@ -69,7 +68,7 @@ class BTreeIndex(Generic[K, V]):
                 return old_value
             
             # If the key doesn't exist in the tree - descent or insert
-            if current.is_leaf():
+            if current.is_leaf:
                 # Leaf node - insert here (guaranteed to have space)
                 current.insert_key_value(key, value)
                 self._size += 1
@@ -89,13 +88,13 @@ class BTreeIndex(Generic[K, V]):
 
     def delete(self, key: K) -> Optional[V]:
         # 1. Handle empty tree
-        if (self._is_empty()):
+        if self.is_empty():
             return None
 
         # 2. Handle root
         result = self._delete_from_node(self._root, key)
         # 3. If root is empty but has children, promote child to root
-        if len(self._root) == 0 and not self._root.is_leaf():
+        if len(self._root) == 0 and not self._root.is_leaf:
             self._root = self._root.get_child(0)
         
         return result
@@ -108,7 +107,7 @@ class BTreeIndex(Generic[K, V]):
         # 2. Remove middle key from the original node
         middle_kv_pair = current.remove_key_value_pair(middle_index)
         # 3. Create new right node
-        right = BTreeNode(self._min_degree, current.is_leaf())
+        right = BTreeNode(self._min_degree, current.is_leaf)
         
         # 4. Move keys from middle_index + 1 ... end to the right node
         while len(current) > middle_index:
@@ -117,7 +116,7 @@ class BTreeIndex(Generic[K, V]):
         
         # 5. If not leaf (internal node), move all children from middle_index + 1 ... end
         # to the right node
-        if not current.is_leaf():
+        if not current.is_leaf:
             while len(current.children) > middle_index + 1:
                 child = current.remove_child(middle_index + 1)
                 right.insert_child(len(right.children), child)
@@ -141,7 +140,7 @@ class BTreeIndex(Generic[K, V]):
         key_index = current.find_key_index(key)
         if key_index >= 0:
             # Key found in the current node
-            if current.is_leaf():
+            if current.is_leaf:
                 # Simple leaf deletion
                 result = current.remove_key_value_pair(key_index).value
                 self._size -= 1
@@ -149,27 +148,58 @@ class BTreeIndex(Generic[K, V]):
             else:
                 # Internal node deletion - replace with successor
                 original_value = current.get_value(key_index)
+
                 # Find successor - leftmost key in right child
                 successor_node = current.get_child(key_index + 1)
-                while not successor_node.is_leaf():
+                while not successor_node.is_leaf:
+                    if len(successor_node.children) == 0:
+                        # Successor path is broken, try predecessor instead
+                        break
                     successor_node = successor_node.get_child(0)
-                
-                # Replace with successor
-                successor_key = successor_node.get_key(0)
-                successor_value = successor_node.get_value(0)
-                current.remove_key_value_pair(key_index)
-                current.insert_key_value(successor_key, successor_value)
-                # Delete successor from leaf
-                self._delete_from_node(current.get_child(key_index + 1), successor_key)
-                # Check for underflow in child after deletion
-                child = current.get_child(key_index + 1)
-                
-                if len(child) < (self._min_degree - 1):
-                    self._fix_underflow(current, key_index + 1)
-                
+
+                # Check if successor node has keys
+                if len(successor_node) > 0:
+                    # Replace with successor
+                    successor_key = successor_node.get_key(0)
+                    successor_value = successor_node.get_value(0)
+                    current.remove_key_value_pair(key_index)
+                    current.insert_key_value(successor_key, successor_value)
+                    # Delete successor from leaf
+                    self._delete_from_node(current.get_child(key_index + 1), successor_key)
+                    # Check for underflow in child after deletion
+                    if key_index + 1 < len(current.children):
+                        child = current.get_child(key_index + 1)
+                        if len(child) < (self._min_degree - 1):
+                            self._fix_underflow(current, key_index + 1)
+                else:
+                    # Try predecessor instead
+                    predecessor_node = current.get_child(key_index)
+                    while not predecessor_node.is_leaf:
+                        if len(predecessor_node.children) == 0:
+                            break
+                        predecessor_node = predecessor_node.get_child(len(predecessor_node.children) - 1)
+
+                    if len(predecessor_node) > 0:
+                        # Replace with predecessor
+                        pred_key = predecessor_node.get_key(len(predecessor_node) - 1)
+                        pred_value = predecessor_node.get_value(len(predecessor_node) - 1)
+                        current.remove_key_value_pair(key_index)
+                        current.insert_key_value(pred_key, pred_value)
+                        # Delete predecessor
+                        self._delete_from_node(current.get_child(key_index), pred_key)
+                        # Check for underflow
+                        if key_index < len(current.children):
+                            child = current.get_child(key_index)
+                            if len(child) < (self._min_degree - 1):
+                                self._fix_underflow(current, key_index)
+                    else:
+                        # Both successor and predecessor are empty, just remove the key
+                        current.remove_key_value_pair(key_index)
+                        self._size -= 1
+
                 return original_value
         
-        elif not current.is_leaf():
+        elif not current.is_leaf:
             # Key not found - descend to appropriate child
             child_index = current.get_child_index(key)
             result = self._delete_from_node(current.get_child(child_index), key)
@@ -183,30 +213,34 @@ class BTreeIndex(Generic[K, V]):
     
 
     def _fix_underflow(self, parent: BTreeNode, child_index: int):
+        # Bounds checking
+        if child_index >= len(parent.children) or len(parent) == 0:
+            return
+
         child = parent.get_child(child_index)
         # Defensive check - child should be underflowing
         if len(child) >= (self._min_degree - 1):
             return
-        
+
         # Try to borrow from left sibling first
         if child_index > 0:
             left_sibling = parent.get_child(child_index - 1)
             if len(left_sibling) > (self._min_degree - 1):
                 self._borrow_from_left_sibling(child, parent, child_index)
                 return
-        
+
         # Try to borrow from right sibling
         if child_index < (len(parent.children) - 1):
             right_sibling = parent.get_child(child_index + 1)
             if len(right_sibling) > (self._min_degree - 1):
                 self._borrow_from_right_sibling(child, parent, child_index)
                 return
-            
+
         # Cannot borrow - must merge with a sibling
-        if child_index > 0:
+        if child_index > 0 and len(parent) > child_index - 1:
             # Merge with left sibling
             self._merge_with_left_sibling(child, parent, child_index)
-        elif child_index < (len(parent.children) - 1):
+        elif child_index < (len(parent.children) - 1) and len(parent) > child_index:
             self._merge_with_right_sibling(child, parent, child_index)
 
 
@@ -223,7 +257,7 @@ class BTreeIndex(Generic[K, V]):
         # 5. Move separator to the current node at the beginning
         node.insert_key_value(separator.key, separator.value)
         # 6. Handle children for internal nodes
-        if not node.is_leaf():
+        if not node.is_leaf:
             # Move right most child from the left sibling to current node
             removed_child = left_sibling.remove_child(len(left_sibling.children) - 1)
             node.insert_child(0, removed_child)
@@ -241,56 +275,72 @@ class BTreeIndex(Generic[K, V]):
         # 5. Move separator to the current node at the beginning
         node.insert_key_value(separator.key, separator.value)
         # 6. Handle children for internal nodes
-        if not node.is_leaf():
+        if not node.is_leaf:
             # Move left most child from the right sibling to current node
             removed_child = right_sibling.remove_child(0)
             node.insert_child(len(node.children), removed_child)
 
     
     def _merge_with_left_sibling(self, node: BTreeNode[K, V], parent: BTreeNode[K, V], node_index: int):
+        # Bounds check
+        if node_index <= 0 or node_index - 1 >= len(parent):
+            return
+
         left_sibling = parent.get_child(node_index - 1)
         # Attempt fallback to borrowing if merge is unsafe
         if self._cannot_safely_merge(left_sibling, node) and len(left_sibling) > (self._min_degree - 1):
             self._borrow_from_left_sibling(node, parent, node_index)
             return
-        
-        # Safe to merge
-        separator = parent.remove_key_value_pair(node_index - 1)
-        left_sibling.insert_key_value(separator.key, separator.value)
+
+        # Safe to merge - check if separator exists
+        if node_index - 1 < len(parent):
+            separator = parent.remove_key_value_pair(node_index - 1)
+            left_sibling.insert_key_value(separator.key, separator.value)
+
         # Move all nodes from current node to left sibling
         while len(node) > 0:
             removed_key = node.remove_key_value_pair(0)
             left_sibling.insert_key_value(removed_key.key, removed_key.value)
-        
+
         # Move all children from current node to left sibling
-        while len(node.children) != 0:
-            left_sibling.insert_child(len(left_sibling.children), node.remove_child(0))
-        
+        if not node.is_leaf:
+            while len(node.children) > 0:
+                left_sibling.insert_child(len(left_sibling.children), node.remove_child(0))
+
         # Remove current node from parent
-        parent.remove_child(node_index)
+        if node_index < len(parent.children):
+            parent.remove_child(node_index)
 
     
     def _merge_with_right_sibling(self, node: BTreeNode[K, V], parent: BTreeNode[K, V], node_index: int):
+        # Bounds check
+        if node_index >= len(parent.children) - 1 or node_index >= len(parent):
+            return
+
         right_sibling = parent.get_child(node_index + 1)
         # Attempt fallback to borrowing if merge is unsafe
         if self._cannot_safely_merge(node, right_sibling) and len(right_sibling) > (self._min_degree - 1):
             self._borrow_from_right_sibling(node, parent, node_index)
             return
-        
-        # Safe to merge
-        separator = parent.remove_key_value_pair(node_index)
-        right_sibling.insert_key_value(separator.key, separator.value)
-        # Move all nodes from current node to left sibling
-        while len(node) > 0:
-            removed_key = node.remove_key_value_pair(0)
-            right_sibling.insert_key_value(removed_key.key, removed_key.value)
-        
-        # Move all children from current node to left sibling
-        while len(node.children) != 0:
-            node.insert_child(len(node.children), right_sibling.remove_child(0))
-        
-        # Remove current node from parent
-        parent.remove_child(node_index + 1)
+
+        # Safe to merge - check if separator exists
+        if node_index < len(parent):
+            separator = parent.remove_key_value_pair(node_index)
+            node.insert_key_value(separator.key, separator.value)
+
+        # Move all keys from right sibling to current node
+        while len(right_sibling) > 0:
+            removed_key = right_sibling.remove_key_value_pair(0)
+            node.insert_key_value(removed_key.key, removed_key.value)
+
+        # Move all children from right sibling to current node
+        if not node.is_leaf:
+            while len(right_sibling.children) > 0:
+                node.insert_child(len(node.children), right_sibling.remove_child(0))
+
+        # Remove right sibling from parent
+        if node_index + 1 < len(parent.children):
+            parent.remove_child(node_index + 1)
 
     
     def _cannot_safely_merge(self, node1: BTreeNode[K, V], node2: BTreeNode[K, V]) -> bool:

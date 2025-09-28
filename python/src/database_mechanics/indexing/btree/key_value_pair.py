@@ -12,7 +12,7 @@ class KeyValuePair(Generic[K, V]):
     def __init__(self, key: K, value: V):
         if key is None:
             raise ValueError("Key cannot be null")
-        super.__setattr__("_key", key) # bypass __setattr__ checks
+        super().__setattr__("_key", key) # bypass __setattr__ checks
         self.value = value # mutable
 
     @property

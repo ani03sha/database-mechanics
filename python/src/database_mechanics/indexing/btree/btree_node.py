@@ -15,7 +15,7 @@ class BTreeNode(Generic[K, V]):
         if min_degree < 2:
             raise ValueError("Minimum degress must be at least 2")
         # Make _min_degree immutable
-        super.__setattr__("_min_degree", min_degree)
+        super().__setattr__("_min_degree", min_degree)
         self._is_leaf = is_leaf # Mutable - can change during splits
         self._key_value_pairs: List[KeyValuePair[K, V]] = []
         self._children: List['BTreeNode[K, V]'] = []
