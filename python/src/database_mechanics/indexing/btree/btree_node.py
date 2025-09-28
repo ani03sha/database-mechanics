@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar, List, Optional, Union
+from typing import Generic, TypeVar, List
 import bisect
 from .key_value_pair import KeyValuePair
 
@@ -14,7 +14,7 @@ class BTreeNode(Generic[K, V]):
     def __init__(self, min_degree: int, is_leaf: bool = True):
         if min_degree < 2:
             raise ValueError("Minimum degress must be at least 2")
-        # Makr _min_degree immutable
+        # Make _min_degree immutable
         super.__setattr__("_min_degree", min_degree)
         self._is_leaf = is_leaf # Mutable - can change during splits
         self._key_value_pairs: List[KeyValuePair[K, V]] = []
@@ -30,7 +30,7 @@ class BTreeNode(Generic[K, V]):
     
     @is_leaf.setter
     def is_leaf(self, value: bool):
-        self.is_leaf = value
+        self._is_leaf = value
 
     def __len__(self) -> int:
         return len(self._key_value_pairs)
@@ -58,6 +58,9 @@ class BTreeNode(Generic[K, V]):
     # Core operations
     def is_full(self) -> bool:
         return len(self._key_value_pairs) >= (2 * self._min_degree - 1)
+    
+    def is_underflow(self) -> bool:
+        return len(self._key_value_pairs) < (self.min_degree - 1)
     
     def insert_key_value(self, key: K, value: V):
         """
@@ -101,7 +104,7 @@ class BTreeNode(Generic[K, V]):
         return self._children.pop(index)
     
     def __setattr__(self, name, value):
-        if name == "min_degree":
+        if name == "_min_degree":
             raise AttributeError("min_degree is immutable and cannot be modified")
         return super().__setattr__(name, value)
     
